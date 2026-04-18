@@ -12,15 +12,15 @@ st.set_page_config(page_title="Analizador Estadístico con IA", layout="wide")
 # Configurar API de Gemini (Usa st.secrets en producción)
 # genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-st.title("📊 Análisis Estadístico y Pruebas de Hipótesis")
+st.title(" Análisis Estadístico y Pruebas de Hipótesis")
 st.write("Navega por las secciones usando el menú superior:")
 
 # --- CREACIÓN DEL MENÚ SUPERIOR (TABS) ---
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📥 1. Carga de Datos", 
-    "📈 2. Visualización", 
-    "🧪 3. Prueba Z", 
-    "🤖 4. Asistente IA"
+    " 1. Carga de Datos", 
+    " 2. Visualización", 
+    " 3. Prueba Z", 
+    " 4. Asistente IA"
 ])
 
 # Variable global para almacenar los datos
@@ -81,10 +81,12 @@ if df is not None and not df.empty:
             st.pyplot(fig)
 
         st.markdown("### Reflexión del Estudiante")
-        c1, c2, c3 = st.columns(3)
-        normalidad = c1.radio("¿La distribución parece normal?", ["Sí", "No", "Incierto"])
-        sesgo = c2.radio("¿Hay presencia de sesgo?", ["Sin sesgo", "Sesgo a la izquierda", "Sesgo a la derecha"])
-        outliers = c3.radio("¿Observas outliers extremos en el boxplot?", ["Sí", "No"])
+        col_ref1, col_ref2, col_ref3 = st.columns(3)
+    
+    # Guardamos las respuestas en session_state para que la IA las vea
+        st.session_state['resp_normal'] = col_ref1.radio("¿Parece normal?", ["Sí", "No", "Incierto"], key="norm")
+        st.session_state['resp_sesgo'] = col_ref2.radio("¿Hay sesgo?", ["Sin sesgo", "Izquierda", "Derecha"], key="bias")
+        st.session_state['resp_outliers'] = col_ref3.radio("¿Hay outliers?", ["Sí", "No"], key="out")
 
     # ==========================================
     # SECCIÓN 3: PRUEBA DE HIPÓTESIS
@@ -127,7 +129,7 @@ if df is not None and not df.empty:
         if rechazar_h0:
             r3.error("🚨 Se rechaza H0")
         else:
-            r3.success("✅ No hay evidencia para rechazar H0")
+            r3.success(" No hay evidencia para rechazar H0")
 
         # --- Gráfico de Zonas de Rechazo ---
         fig_z, ax_z = plt.subplots(figsize=(8, 3))
@@ -153,33 +155,91 @@ if df is not None and not df.empty:
     # SECCIÓN 4: ASISTENTE IA
     # ==========================================
     with tab4:
-        st.header("Asistente Estadístico (Gemini)")
-        st.write("Consulta a la Inteligencia Artificial para interpretar los resultados de la prueba Z que acabas de realizar.")
+        st.header("Asistente Estadístico (Gemini 2.5 Pro)")
+        
+        # Selector de tipo de prompt 
+        opcion_prompt = st.selectbox("Selecciona el tipo de análisis:", [
+            "Inferencia General de Resultados",
+            "Análisis Detallado de Prueba Z y Supuestos"
+        ])
 
-        if st.button("Analizar resultados con IA", type="primary"):
-            with st.spinner("Consultando a Gemini..."):
-                prompt = f"""
-                Actúa como un profesor experto en estadística. Se realizó una prueba Z con los siguientes parámetros:
-                - Media muestral: {media_muestra:.4f}
-                - Media hipotética (H0): {mu_hipotetica}
-                - Tamaño de muestra (n): {n_muestra}
-                - Desviación estándar poblacional: {sigma_pob}
-                - Nivel de significancia (alpha): {alpha}
-                - Tipo de prueba: {tipo_prueba}
+        # 1. INICIALIZAR MEMORIA
+        if 'reporte_ia' not in st.session_state:
+            st.session_state['reporte_ia'] = None
+
+        if st.button("Generar Análisis y Comparar", type="primary"):
+            with st.spinner("Gemini 2.5 Pro está procesando la comparación exhaustiva..."):
                 
-                El estadístico Z calculado fue {z_stat:.4f} y el p-value fue {p_value:.4f}.
-                
-                Responde a lo siguiente de forma clara y directa:
-                1. ¿Se rechaza H0?
-                2. Explica la decisión estadística basándote en el Z y el p-value.
-                3. ¿Qué implicaciones tiene esto de forma práctica?
-                4. ¿Fueron razonables los supuestos (n > 30 y varianza conocida)?
-                """
-                
+                # Recuperar reflexiones del estudiante
+                est_norm = st.session_state.get('resp_normal', 'No respondido')
+                est_sesgo = st.session_state.get('resp_sesgo', 'No respondido')
+                est_out = st.session_state.get('resp_outliers', 'No respondido')
+
+                # Construir el Prompt 
+                if opcion_prompt == "Inferencia General de Resultados":
+                    prompt_final = f"""
+                    Dado este resumen estadístico:
+                    - Media muestral: {media_muestra:.4f}
+                    - n: {n_muestra}
+                    - Estadístico Z: {z_stat:.4f}
+                    - p-value: {p_value:.4f}
+                    
+                    ¿Qué podemos inferir de los resultados? (Responde de forma clara sin mostrar datos crudos).
+                    
+                    A continuación, realiza una COMPARACIÓN EXHAUSTIVA entre la realidad estadística y la percepción visual del estudiante:
+                    - El estudiante evaluó la normalidad como: '{est_norm}'
+                    - El estudiante evaluó el sesgo como: '{est_sesgo}'
+                    - El estudiante evaluó los outliers como: '{est_out}'
+                    
+                    Justifica detalladamente punto por punto: ¿Por qué el estudiante acertó o falló en cada apreciación? ¿Cómo se refleja esta realidad en la confiabilidad del valor de Z obtenido?
+                    """
+                else:
+                    prompt_final = f"""
+                    Se realizó una prueba Z con los siguientes parámetros:
+                    media muestral = {media_muestra:.4f}, media hipotética = {mu_hipotetica}, 
+                    n = {n_muestra}, sigma = {sigma_pob}, alpha = {alpha}, 
+                    tipo de prueba = {tipo_prueba}.
+                    
+                    El estadístico Z fue = {z_stat:.4f} y el p-value = {p_value:.4f}.
+                    
+                    1. ¿Se rechaza H0? Explica la decisión detalladamente basándote en la región crítica.
+                    2. ¿Son razonables los supuestos de la prueba (n ≥ 30 y varianza conocida)?
+                    
+                    3. COMPARACIÓN EXHAUSTIVA:
+                    El estudiante afirmó que la normalidad es '{est_norm}', el sesgo es '{est_sesgo}' y los outliers son '{est_out}'.
+                    Analiza de forma exhaustiva y justifica si estas afirmaciones tienen sentido basándote en la teoría estadística. Explica el "por qué" detrás de cada acierto o error del estudiante y qué implicaciones tiene en la vida real tomar una decisión con esa percepción visual.
+                    """
+                # Llamada a la API con manejo de errores y Fallback
                 try:
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    response = model.generate_content(prompt)
-                    st.success("Análisis completado")
-                    st.markdown(response.text)
+                    # Intento 1: Usar el modelo avanzado (El que hace la evaluación exhaustiva profunda)
+                    model = genai.GenerativeModel('gemini-2.5-pro') 
+                    response = model.generate_content(prompt_final)
+                    st.session_state['reporte_ia'] = response.text
+                    
                 except Exception as e:
-                    st.error(f"Error al conectar con la API de Gemini: {e}")
+                    mensaje_error = str(e)
+                    # Si el error es por límite de cuota (429)
+                    if "429" in mensaje_error or "Quota" in mensaje_error:
+                        st.warning("Cuota excedida en Gemini 2.5 Pro. Cambiando automáticamente a Gemini 2.5 Flash para completar la solicitud...")
+                        
+                        try:
+                            # Intento 2: Fallback automático al modelo Flash disponible en tu lista
+                            model_fallback = genai.GenerativeModel('gemini-2.5-flash')
+                            response = model_fallback.generate_content(prompt_final)
+                            st.session_state['reporte_ia'] = response.text
+                            st.success("Se usó Gemini 2.5 Flash como respaldo de emergencia.")
+                            
+                        except Exception as e_fallback:
+                            st.error(f"Error crítico en ambos modelos. Intenta de nuevo en 1 minuto. Detalles: {e_fallback}")
+                    else:
+                        # Si es cualquier otro error (ej. sin internet)
+                        st.error(f"Error de conexión con la IA: {e}")
+
+        if st.session_state.get('reporte_ia'):
+            st.markdown("---")
+            st.markdown("### Informe de Evaluación Exhaustiva")
+            st.info(st.session_state['reporte_ia'])
+            
+            if st.button("Limpiar Reporte", key="btn_limpiar"):
+                st.session_state['reporte_ia'] = None
+                st.rerun()
