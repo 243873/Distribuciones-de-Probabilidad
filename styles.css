@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+html, body, [class*="css"]{
+    font-family:'Inter', sans-serif;
+}
+
+section[data-testid="stSidebar"]{
+    background:#003049;
+}
+
+section[data-testid="stSidebar"] *{
+    color:white !important;
+}
+
+h1,h2,h3{
+    color:#003049;
+}
+
+.stButton>button{
+    background:#D62828;
+    color:white;
+    border:none;
+    border-radius:8px;
+}
+
+.stButton>button:hover{
+    background:#F77F00;
+}

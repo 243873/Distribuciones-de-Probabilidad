@@ -3,32 +3,60 @@ import seaborn as sns
 import numpy as np
 import scipy.stats as stats
 
-def histograma(data):
-    fig, ax = plt.subplots()
-    sns.histplot(data, kde=True, ax=ax)
+def histograma_kde(x):
+
+    fig, ax = plt.subplots(figsize=(12,5))
+
+    sns.histplot(
+        x,
+        kde=True,
+        color="#F77F00",
+        ax=ax
+    )
+
+    ax.grid(alpha=0.2)
+    ax.set_title("Histograma + KDE")
+
     return fig
 
-def boxplot(data):
-    fig, ax = plt.subplots()
-    sns.boxplot(x=data, ax=ax)
+
+def boxplot_chart(x):
+
+    fig, ax = plt.subplots(figsize=(12,3))
+
+    sns.boxplot(
+        x=x,
+        color="#FCBF49",
+        ax=ax
+    )
+
+    ax.grid(alpha=0.2)
+    ax.set_title("Boxplot")
+
     return fig
+
 
 def curva_z(z, crit, tipo):
-    fig, ax = plt.subplots(figsize=(8,4))
-    x = np.linspace(-4,4,1000)
-    y = stats.norm.pdf(x)
 
-    ax.plot(x,y)
+    fig, ax = plt.subplots(figsize=(12,5))
+
+    xs = np.linspace(-4,4,1000)
+    ys = stats.norm.pdf(xs)
+
+    ax.plot(xs, ys, color="#003049", linewidth=2)
 
     if tipo == "Bilateral":
-        ax.fill_between(x,y,where=(x>crit),alpha=.5)
-        ax.fill_between(x,y,where=(x<-crit),alpha=.5)
+        ax.fill_between(xs, ys, where=(xs>crit), alpha=0.5, color="#D62828")
+        ax.fill_between(xs, ys, where=(xs<-crit), alpha=0.5, color="#D62828")
 
-    elif tipo == "Izquierda":
-        ax.fill_between(x,y,where=(x<crit),alpha=.5)
+    elif tipo == "Cola Izquierda":
+        ax.fill_between(xs, ys, where=(xs<crit), alpha=0.5, color="#D62828")
 
     else:
-        ax.fill_between(x,y,where=(x>crit),alpha=.5)
+        ax.fill_between(xs, ys, where=(xs>crit), alpha=0.5, color="#D62828")
 
-    ax.axvline(z, linestyle="--")
+    ax.axvline(z, linestyle="--", color="#F77F00", linewidth=2)
+
+    ax.grid(alpha=0.2)
+
     return fig
