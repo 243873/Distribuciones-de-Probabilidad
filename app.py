@@ -1,3 +1,5 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,241 +7,292 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.stats as stats
 import google.generativeai as genai
+import os
+from dotenv import load_dotenv
 
-# Configuración de página
-st.set_page_config(page_title="Analizador Estadístico con IA", layout="wide")
+# ==================================================
+# CONFIGURACIÓN GENERAL
+# ==================================================
+st.set_page_config(
+    page_title="Analizador Estadístico con IA",
+    layout="wide"
+)
 
-# Configurar API de Gemini (Usa st.secrets en producción)
-# genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+st.title("📊 Analizador Estadístico y Pruebas de Hipótesis")
 
-st.title(" Análisis Estadístico y Pruebas de Hipótesis")
-st.write("Navega por las secciones usando el menú superior:")
+# ==================================================
+# CONFIGURAR GEMINI
+# ==================================================
+load_dotenv()
 
-# --- CREACIÓN DEL MENÚ SUPERIOR (TABS) ---
-tab1, tab2, tab3, tab4 = st.tabs([
-    " 1. Carga de Datos", 
-    " 2. Visualización", 
-    " 3. Prueba Z", 
-    " 4. Asistente IA"
-])
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Variable global para almacenar los datos
-df = None
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
-# ==========================================
-# SECCIÓN 1: CARGA DE DATOS
-# ==========================================
-with tab1:
-    st.header("Carga de Datos")
-    data_source = st.radio("Origen de datos:", ("Generación Sintética", "Cargar CSV"), horizontal=True)
+# ==================================================
+# FUNCIÓN IA CON FALLBACK
+# ==================================================
+def analizar_ia(prompt):
 
-    if data_source == "Generación Sintética":
-        n = st.slider("Tamaño de muestra (n)", 30, 1000, 100)
-        mu_real = st.number_input("Media real (oculta al usuario)", value=50.0)
-        sigma_real = st.number_input("Desviación estándar real", value=10.0)
-        
-        # Generar datos normales con algo de ruido/outliers
-        data = np.random.normal(loc=mu_real, scale=sigma_real, size=n)
-        df = pd.DataFrame({'Variable_X': data})
-        st.success("Datos sintéticos generados correctamente.")
-        st.dataframe(df, height=250, use_container_width=True)
-        
-    else:
-        uploaded_file = st.file_uploader("Sube tu CSV", type=["csv"])
-        if uploaded_file is not None:
-            df = pd.read_csv(uploaded_file)
-            st.success("Archivo cargado correctamente.")
-            st.dataframe(df, height=250, use_container_width=True)
-        else:
-            st.info("Sube un CSV para continuar con el análisis.")
+    if not API_KEY:
+        return "❌ No se encontró GEMINI_API_KEY en archivo .env"
 
-# Validación de seguridad: Si no hay datos, no ejecutamos el resto de pestañas
-if df is not None and not df.empty:
-    
-    columnas_numericas = df.select_dtypes(include=np.number).columns
-    
-    # ==========================================
-    # SECCIÓN 2: VISUALIZACIÓN
-    # ==========================================
-    with tab2:
-        st.header("Visualización de la Distribución")
-        variable = st.selectbox("Selecciona la variable a analizar", columnas_numericas)
-        
-        col1, col2 = st.columns(2)
-        fig_size = (6, 4) # Tamaño fijo para igualar proporciones
-        
-        with col1:
-            fig, ax = plt.subplots(figsize=fig_size)
-            sns.histplot(df[variable], kde=True, ax=ax, color='skyblue')
-            ax.set_title("Histograma y KDE")
-            st.pyplot(fig)
+    modelos = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-1.5-pro"
+    ]
 
-        with col2:
-            fig, ax = plt.subplots(figsize=fig_size)
-            sns.boxplot(x=df[variable], ax=ax, color='lightgreen')
-            ax.set_title("Boxplot (Detección de Outliers)")
-            st.pyplot(fig)
+    ultimo_error = ""
 
-        st.markdown("### Reflexión del Estudiante")
-        col_ref1, col_ref2, col_ref3 = st.columns(3)
-    
-    # Guardamos las respuestas en session_state para que la IA las vea
-        st.session_state['resp_normal'] = col_ref1.radio("¿Parece normal?", ["Sí", "No", "Incierto"], key="norm")
-        st.session_state['resp_sesgo'] = col_ref2.radio("¿Hay sesgo?", ["Sin sesgo", "Izquierda", "Derecha"], key="bias")
-        st.session_state['resp_outliers'] = col_ref3.radio("¿Hay outliers?", ["Sí", "No"], key="out")
+    for modelo in modelos:
+        try:
+            model = genai.GenerativeModel(modelo)
+            r = model.generate_content(prompt)
+            return r.text
+        except Exception as e:
+            ultimo_error = str(e)
 
-    # ==========================================
-    # SECCIÓN 3: PRUEBA DE HIPÓTESIS
-    # ==========================================
-    with tab3:
-        st.header("Prueba de Hipótesis (Prueba Z)")
+    return f"❌ Error al usar Gemini:\n{ultimo_error}"
 
-        col_params1, col_params2 = st.columns(2)
-        with col_params1:
-            mu_hipotetica = st.number_input("Hipótesis Nula (Media H0)", value=50.0)
-            sigma_pob = st.number_input("Desviación Estándar Poblacional (σ)", value=10.0)
-        with col_params2:
-            alpha = st.selectbox("Nivel de Significancia (α)", [0.01, 0.05, 0.10], index=1)
-            tipo_prueba = st.selectbox("Tipo de Prueba", ["Bilateral", "Cola Izquierda", "Cola Derecha"])
+# ==================================================
+# CARGA DE DATOS
+# ==================================================
+st.sidebar.header("1️⃣ Fuente de Datos")
 
-        # Cálculos estadísticos
-        n_muestra = len(df[variable])
-        media_muestra = df[variable].mean()
-        z_stat = (media_muestra - mu_hipotetica) / (sigma_pob / np.sqrt(n_muestra))
+modo = st.sidebar.radio(
+    "Selecciona origen:",
+    ["Generación Sintética", "Cargar CSV"]
+)
 
-        # Calcular p-value y valores críticos según el tipo de prueba
-        if tipo_prueba == "Bilateral":
-            p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
-            z_critico = stats.norm.ppf(1 - alpha/2)
-            rechazar_h0 = abs(z_stat) > z_critico
-        elif tipo_prueba == "Cola Izquierda":
-            p_value = stats.norm.cdf(z_stat)
-            z_critico = stats.norm.ppf(alpha)
-            rechazar_h0 = z_stat < z_critico
-        else: # Cola Derecha
-            p_value = 1 - stats.norm.cdf(z_stat)
-            z_critico = stats.norm.ppf(1 - alpha)
-            rechazar_h0 = z_stat > z_critico
+if modo == "Generación Sintética":
 
-        st.subheader("Resultados de la Prueba")
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Estadístico Z", f"{z_stat:.4f}")
-        r2.metric("p-value", f"{p_value:.4f}")
-        
-        if rechazar_h0:
-            r3.error("🚨 Se rechaza H0")
-        else:
-            r3.success(" No hay evidencia para rechazar H0")
+    n = st.sidebar.slider("Tamaño muestra (n)", 30, 1000, 100)
+    mu_real = st.sidebar.number_input("Media real", value=50.0)
+    sigma_real = st.sidebar.number_input("Desviación estándar", value=10.0)
 
-        # --- Gráfico de Zonas de Rechazo ---
-        fig_z, ax_z = plt.subplots(figsize=(8, 3))
-        x_z = np.linspace(-4, 4, 1000)
-        y_z = stats.norm.pdf(x_z, 0, 1)
-        ax_z.plot(x_z, y_z, label='Distribución Normal Estándar')
+    data = np.random.normal(mu_real, sigma_real, n)
 
-        # Sombreado dinámico según la prueba
-        if tipo_prueba == "Bilateral":
-            ax_z.fill_between(x_z, y_z, where=(x_z > z_critico), color='red', alpha=0.5, label='Rechazo')
-            ax_z.fill_between(x_z, y_z, where=(x_z < -z_critico), color='red', alpha=0.5)
-        elif tipo_prueba == "Cola Izquierda":
-            ax_z.fill_between(x_z, y_z, where=(x_z < z_critico), color='red', alpha=0.5, label='Rechazo')
-        else:
-            ax_z.fill_between(x_z, y_z, where=(x_z > z_critico), color='red', alpha=0.5, label='Rechazo')
+    df = pd.DataFrame({
+        "Variable_X": data
+    })
 
-        # Marcar el Z calculado
-        ax_z.axvline(z_stat, color='black', linestyle='--', label=f'Z calculado ({z_stat:.2f})')
-        ax_z.legend()
-        st.pyplot(fig_z)
+else:
+    archivo = st.sidebar.file_uploader("Subir CSV", type=["csv"])
 
-    # ==========================================
-    # SECCIÓN 4: ASISTENTE IA
-    # ==========================================
-    with tab4:
-        st.header("Asistente Estadístico (Gemini 2.5 Pro)")
-        
-        # Selector de tipo de prompt 
-        opcion_prompt = st.selectbox("Selecciona el tipo de análisis:", [
-            "Inferencia General de Resultados",
-            "Análisis Detallado de Prueba Z y Supuestos"
-        ])
+    if archivo is None:
+        st.warning("Sube un archivo CSV para continuar.")
+        st.stop()
 
-        # 1. INICIALIZAR MEMORIA
-        if 'reporte_ia' not in st.session_state:
-            st.session_state['reporte_ia'] = None
+    df = pd.read_csv(archivo)
 
-        if st.button("Generar Análisis y Comparar", type="primary"):
-            with st.spinner("Gemini 2.5 Pro está procesando la comparación exhaustiva..."):
-                
-                # Recuperar reflexiones del estudiante
-                est_norm = st.session_state.get('resp_normal', 'No respondido')
-                est_sesgo = st.session_state.get('resp_sesgo', 'No respondido')
-                est_out = st.session_state.get('resp_outliers', 'No respondido')
+# ==================================================
+# SELECCIÓN VARIABLE
+# ==================================================
+columnas_numericas = df.select_dtypes(include=np.number).columns.tolist()
 
-                # Construir el Prompt 
-                if opcion_prompt == "Inferencia General de Resultados":
-                    prompt_final = f"""
-                    Dado este resumen estadístico:
-                    - Media muestral: {media_muestra:.4f}
-                    - n: {n_muestra}
-                    - Estadístico Z: {z_stat:.4f}
-                    - p-value: {p_value:.4f}
-                    
-                    ¿Qué podemos inferir de los resultados? (Responde de forma clara sin mostrar datos crudos).
-                    
-                    A continuación, realiza una COMPARACIÓN EXHAUSTIVA entre la realidad estadística y la percepción visual del estudiante:
-                    - El estudiante evaluó la normalidad como: '{est_norm}'
-                    - El estudiante evaluó el sesgo como: '{est_sesgo}'
-                    - El estudiante evaluó los outliers como: '{est_out}'
-                    
-                    Justifica detalladamente punto por punto: ¿Por qué el estudiante acertó o falló en cada apreciación? ¿Cómo se refleja esta realidad en la confiabilidad del valor de Z obtenido?
-                    """
-                else:
-                    prompt_final = f"""
-                    Se realizó una prueba Z con los siguientes parámetros:
-                    media muestral = {media_muestra:.4f}, media hipotética = {mu_hipotetica}, 
-                    n = {n_muestra}, sigma = {sigma_pob}, alpha = {alpha}, 
-                    tipo de prueba = {tipo_prueba}.
-                    
-                    El estadístico Z fue = {z_stat:.4f} y el p-value = {p_value:.4f}.
-                    
-                    1. ¿Se rechaza H0? Explica la decisión detalladamente basándote en la región crítica.
-                    2. ¿Son razonables los supuestos de la prueba (n ≥ 30 y varianza conocida)?
-                    
-                    3. COMPARACIÓN EXHAUSTIVA:
-                    El estudiante afirmó que la normalidad es '{est_norm}', el sesgo es '{est_sesgo}' y los outliers son '{est_out}'.
-                    Analiza de forma exhaustiva y justifica si estas afirmaciones tienen sentido basándote en la teoría estadística. Explica el "por qué" detrás de cada acierto o error del estudiante y qué implicaciones tiene en la vida real tomar una decisión con esa percepción visual.
-                    """
-                # Llamada a la API con manejo de errores y Fallback
-                try:
-                    # Intento 1: Usar el modelo avanzado (El que hace la evaluación exhaustiva profunda)
-                    model = genai.GenerativeModel('gemini-2.5-pro') 
-                    response = model.generate_content(prompt_final)
-                    st.session_state['reporte_ia'] = response.text
-                    
-                except Exception as e:
-                    mensaje_error = str(e)
-                    # Si el error es por límite de cuota (429)
-                    if "429" in mensaje_error or "Quota" in mensaje_error:
-                        st.warning("Cuota excedida en Gemini 2.5 Pro. Cambiando automáticamente a Gemini 2.5 Flash para completar la solicitud...")
-                        
-                        try:
-                            # Intento 2: Fallback automático al modelo Flash disponible en tu lista
-                            model_fallback = genai.GenerativeModel('gemini-2.5-flash')
-                            response = model_fallback.generate_content(prompt_final)
-                            st.session_state['reporte_ia'] = response.text
-                            st.success("Se usó Gemini 2.5 Flash como respaldo de emergencia.")
-                            
-                        except Exception as e_fallback:
-                            st.error(f"Error crítico en ambos modelos. Intenta de nuevo en 1 minuto. Detalles: {e_fallback}")
-                    else:
-                        # Si es cualquier otro error (ej. sin internet)
-                        st.error(f"Error de conexión con la IA: {e}")
+if len(columnas_numericas) == 0:
+    st.error("El archivo no contiene columnas numéricas.")
+    st.stop()
 
-        if st.session_state.get('reporte_ia'):
-            st.markdown("---")
-            st.markdown("### Informe de Evaluación Exhaustiva")
-            st.info(st.session_state['reporte_ia'])
-            
-            if st.button("Limpiar Reporte", key="btn_limpiar"):
-                st.session_state['reporte_ia'] = None
-                st.rerun()
+variable = st.sidebar.selectbox(
+    "Selecciona variable numérica:",
+    columnas_numericas
+)
+
+st.subheader("Vista previa de datos")
+st.dataframe(df.head())
+
+# ==================================================
+# VISUALIZACIÓN
+# ==================================================
+st.header("📈 Visualización de Distribución")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    fig, ax = plt.subplots()
+    sns.histplot(df[variable], kde=True, ax=ax, color="skyblue")
+    ax.set_title("Histograma + KDE")
+    st.pyplot(fig)
+
+with col2:
+    fig, ax = plt.subplots()
+    sns.boxplot(x=df[variable], ax=ax, color="lightgreen")
+    ax.set_title("Boxplot")
+    st.pyplot(fig)
+
+# ==================================================
+# REFLEXIÓN DEL ESTUDIANTE
+# ==================================================
+st.header("🧠 Reflexión del Estudiante")
+
+normalidad = st.radio(
+    "¿La distribución parece normal?",
+    ["Sí", "No", "Incierto"]
+)
+
+sesgo = st.radio(
+    "¿Existe sesgo?",
+    ["Sin sesgo", "Sesgo izquierda", "Sesgo derecha"]
+)
+
+outliers = st.radio(
+    "¿Hay outliers?",
+    ["Sí", "No"]
+)
+
+# ==================================================
+# PRUEBA Z
+# ==================================================
+st.header("🧪 Prueba de Hipótesis Z")
+
+colA, colB = st.columns(2)
+
+with colA:
+    mu0 = st.number_input("Hipótesis nula H0 (media)", value=50.0)
+    sigma_pob = st.number_input("Desviación poblacional σ", value=10.0)
+
+with colB:
+    alpha = st.selectbox(
+        "Nivel significancia α",
+        [0.01, 0.05, 0.10],
+        index=1
+    )
+
+    tipo = st.selectbox(
+        "Tipo prueba",
+        ["Bilateral", "Cola Izquierda", "Cola Derecha"]
+    )
+
+# Mostrar hipótesis
+if tipo == "Bilateral":
+    st.latex(r"H_0:\mu=\mu_0 \quad H_1:\mu \ne \mu_0")
+elif tipo == "Cola Izquierda":
+    st.latex(r"H_0:\mu=\mu_0 \quad H_1:\mu < \mu_0")
+else:
+    st.latex(r"H_0:\mu=\mu_0 \quad H_1:\mu > \mu_0")
+
+# ==================================================
+# CÁLCULOS
+# ==================================================
+x = df[variable]
+
+n = len(x)
+media = x.mean()
+
+z = (media - mu0) / (sigma_pob / np.sqrt(n))
+
+if tipo == "Bilateral":
+    p = 2 * (1 - stats.norm.cdf(abs(z)))
+    crit = stats.norm.ppf(1 - alpha / 2)
+    reject = abs(z) > crit
+
+elif tipo == "Cola Izquierda":
+    p = stats.norm.cdf(z)
+    crit = stats.norm.ppf(alpha)
+    reject = z < crit
+
+else:
+    p = 1 - stats.norm.cdf(z)
+    crit = stats.norm.ppf(1 - alpha)
+    reject = z > crit
+
+decision_auto = "Rechazar H0" if reject else "No rechazar H0"
+
+# ==================================================
+# RESULTADOS
+# ==================================================
+st.subheader("📌 Resultados")
+
+st.write(f"**Media muestral:** {media:.4f}")
+st.write(f"**Tamaño muestra:** {n}")
+st.write(f"**Estadístico Z:** {z:.4f}")
+st.write(f"**Valor crítico:** {crit:.4f}")
+st.write(f"**p-value:** {p:.6f}")
+st.write(f"**Decisión automática:** {decision_auto}")
+
+# ==================================================
+# DECISIÓN DEL ESTUDIANTE
+# ==================================================
+decision_estudiante = st.radio(
+    "¿Cuál sería tu decisión?",
+    ["Rechazar H0", "No rechazar H0"]
+)
+
+# ==================================================
+# CURVA NORMAL
+# ==================================================
+st.header("📉 Región Crítica")
+
+fig, ax = plt.subplots(figsize=(10,4))
+
+xs = np.linspace(-4, 4, 1000)
+ys = stats.norm.pdf(xs)
+
+ax.plot(xs, ys)
+
+if tipo == "Bilateral":
+    ax.fill_between(xs, ys, where=(xs > crit), alpha=0.5)
+    ax.fill_between(xs, ys, where=(xs < -crit), alpha=0.5)
+
+elif tipo == "Cola Izquierda":
+    ax.fill_between(xs, ys, where=(xs < crit), alpha=0.5)
+
+else:
+    ax.fill_between(xs, ys, where=(xs > crit), alpha=0.5)
+
+ax.axvline(z, linestyle="--", label=f"Z={z:.2f}")
+ax.legend()
+
+st.pyplot(fig)
+
+# ==================================================
+# MÓDULO IA
+# ==================================================
+st.header("🤖 Asistente IA (Gemini)")
+
+if st.button("Analizar con IA"):
+
+    prompt = f"""
+Actúa como profesor estricto de estadística.
+
+Resumen estadístico:
+
+Media muestral = {media:.4f}
+Media hipotética = {mu0}
+n = {n}
+Sigma poblacional = {sigma_pob}
+Alpha = {alpha}
+Tipo prueba = {tipo}
+
+Resultado:
+Z = {z:.4f}
+p-value = {p:.6f}
+
+Decisión automática:
+{decision_auto}
+
+Decisión del estudiante:
+{decision_estudiante}
+
+Observaciones del estudiante:
+Normalidad = {normalidad}
+Sesgo = {sesgo}
+Outliers = {outliers}
+
+Responde:
+
+1. ¿Se rechaza H0?
+2. ¿El estudiante acertó?
+3. Explica usando Z y p-value.
+4. ¿Son razonables los supuestos de prueba Z?
+5. Conclusión práctica breve.
+"""
+
+    with st.spinner("Consultando Gemini..."):
+        respuesta = analizar_ia(prompt)
+
+    st.subheader("📘 Respuesta IA")
+    st.write(respuesta)
