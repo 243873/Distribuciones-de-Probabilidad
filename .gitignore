@@ -1,4 +1,14 @@
+# --- Entornos Virtuales ---
 venv/
+env/
+
+# --- Archivos temporales de Python ---
 __pycache__/
 *.pyc
+
+# --- Variables de Entorno y Secretos Generales ---
 .env
+
+# --- Secretos específicos de Streamlit ---
+.streamlit/
+.streamlit/secrets.toml
